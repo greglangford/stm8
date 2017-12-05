@@ -30,7 +30,7 @@ void putchar(char c) {
 }
 
 void spi_transfer(uint8_t *byte) {
-    printf("TRANSFER BYTE ADDR: %p\r\n", byte);
+    //printf("TRANSFER BYTE ADDR: %p\r\n", byte);
     while(!(SPI_SR & SPI_SR_TXE));
     SPI_DR = *byte;     // derefrence byte
 
@@ -38,17 +38,14 @@ void spi_transfer(uint8_t *byte) {
     *byte = SPI_DR;     // derefrence byte
 }
 
-void nrf24_send_command(uint8_t command, void *data, uint8_t len) {
+void nrf24_send_command(uint8_t command, uint8_t data[], uint8_t len) {
     uint8_t i;
 
+    spi_transfer(&command);
+    // status = *command;
+
     for (i = 0; i < len; i++)
-        dataptr = &((uint8_t*)data)[0];
-        spi_transfer(dataptr);
-
-    //x = ((uint8_t*)data)[0];
-    //x = 0x11;
-
-    printf("SEND: %p\r\n", dataptr);
+        spi_transfer(&data[i]);
 }
 
 void main(void) {
@@ -72,17 +69,15 @@ void main(void) {
     // SPI
     SPI_CR1 = SPI_CR1_SPE | SPI_CR1_MSTR;    // SPI Enabled, SPI Master Mode
 
-
     data[0] = 0x10; data[1] = 0x01; data[2] = 0x02; data[3] = 0xe0; data[4] = 0xe1;
     data1[0] = 0x00; data1[1] = 0x00; data1[2] = 0x00; data1[3] = 0x00; data1[4] = 0x00;
 
-    printf("Data address in main: %p\r\n", data);
+    printf("Data Address: [0] %p, [1] %p, [2] %p\r\n", &data[0], &data[1], &data[2]);
 
+    nrf24_send_command(NRF24_W_REGISTER | NRF24_CONFIG, data, 5);
 
-    nrf24_send_command(NRF24_W_REGISTER | NRF24_CONFIG, &data, 5);
+    printf("Bytes: [0] %02x, [1] %02x, [2] %02x\r\n", data[0], data[1], data[2]);
 
-    printf("X mem: %p\r\n", &data[0]);
-    printf("Data after send: %02x\r\n", data[0]);
 
     while(1) {};
 
