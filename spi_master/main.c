@@ -22,8 +22,6 @@
 #define UART_CR3_STOP1  (1 << 4)
 #define UART_SR_TXE     (1 << 7)
 
-uint8_t *dataptr;   // pointer
-
 void putchar(char c) {
 	while(!(UART1_SR & UART_SR_TXE));
 	UART1_DR = c;
