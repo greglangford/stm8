@@ -22,6 +22,9 @@
 #define UART_CR3_STOP1  (1 << 4)
 #define UART_SR_TXE     (1 << 7)
 
+uint8_t status;
+uint8_t buf[64];
+
 void putchar(char c) {
 	while(!(UART1_SR & UART_SR_TXE));
 	UART1_DR = c;
@@ -53,9 +56,24 @@ uint8_t nrf24_send_command(uint8_t command, void *ptrdata, uint8_t len) {
     return status;
 }
 
-void main(void) {
-    uint8_t data[5];
+void nrf24_begin() {
+    // clear buffers
+    nrf24_send_command(NRF24_FLUSH_TX, 0, 0);
+    nrf24_send_command(NRF24_FLUSH_RX, 0, 0);
 
+    // clear interrupts
+    buf[0] = NRF24_RX_DR | NRF24_TX_DS | NRF24_MAX_RT;
+    status = nrf24_send_command(NRF24_W_REGISTER | NRF24_STATUS, &buf, 1);
+
+    buf[0] = NRF24_EN_CRC | NRF24_CRCO | NRF24_PWR_UP | NRF24_PRIM_RX;
+    status = nrf24_send_command(NRF24_W_REGISTER | NRF24_CONFIG, &buf, 1);
+
+    buf[0] = 0x00;
+    status = nrf24_send_command(NRF24_W_REGISTER | NRF24_EN_AA, &buf, 1);
+}
+
+void main(void) {
+    int x, i;
     // Clock
     CLK_DIVR = 0x00;    // Set the frequency to 16 MHz
     CLK_PCKENR1 = 0xFF; // Enable peripherals
@@ -66,54 +84,53 @@ void main(void) {
     UART1_BRR2 = 0x03; UART1_BRR1 = 0x68; // 9600 baud
 
     // GPIO
-    PA_DDR |= (1 << 3); // PA3 Output
-    PA_CR1 |= (1 << 3); // PA3 Push-Pull
-    PA_ODR |= (1 << 3); // PA3 Pullup
+    PA_DDR |= (1 << 1) | (1 << 3);  // PA3 Output
+    PA_CR1 |= (1 << 1) | (1 << 3);  // PA3 Push-Pull
+    PA_ODR |= ~(1 << 1) | (1 << 3); // PA3 Pullup
 
     // SPI
     SPI_CR1 = SPI_CR1_SPE | SPI_CR1_MSTR;    // SPI Enabled, SPI Master Mode
 
-    data[0] = 0x11; data[1] = 0xe1; data[2] = 0x02; data[3] = 0xe1; data[4] = 0x01;
-    printf("Status: %02x\r\n", nrf24_send_command(NRF24_W_REGISTER | NRF24_TX_ADDR, &data, 5));
-
-    data[0] = 0x00; data[1] = 0x00; data[2] = 0x00; data[3] = 0x00; data[4] = 0x00;
-    printf("Status: %02x\r\n", nrf24_send_command(NRF24_R_REGISTER | NRF24_TX_ADDR, &data, 5));
-
-    printf("TX ADDR: %02x %02x %02x %02x %02x\r\n", data[0], data[1], data[2], data[3], data[4]);
-
-    while(1) {};
-
-/*
-
+    nrf24_begin();
     while(1) {
-        uint8_t data[5];
-        uint8_t addr[5];
-        uint8_t config;
-        uint8_t data1[5];
+        // clear interrupts
+        buf[0] = NRF24_TX_DS | NRF24_MAX_RT;
+        status = nrf24_send_command(NRF24_W_REGISTER | NRF24_STATUS, &buf, 1);
 
-        // Clear transmit interrupts
-        data[0] = NRF24_RX_DR | NRF24_TX_DS | NRF24_MAX_RT;      // Clear transmit interrupts
-        nrf24_write_register(NRF24_STATUS, &data, 1);
+        printf("Status Start:\t%02x\r\n", status);
 
-        addr[0] = 0x00; addr[1] = 0x00; addr[2] = 0x00; addr[3] = 0x00; addr[4] = 0x00;
-        nrf24_write_register(NRF24_TX_ADDR, &addr, 5);
-        nrf24_write_register(NRF24_RX_ADDR_P0, &addr, 5);
+        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x00; buf[4] = 0x00;
+        status = nrf24_send_command(NRF24_W_REGISTER | NRF24_TX_ADDR, &buf, 5);
+        //printf("Set tx addr:\t\t%02x\r\n", status);
 
-        data[0] = 0x01; data[1] = 0x02; data[2] = 0x03; data[3] = 0x04; data[4] = 0x05;
-        nrf24_send_command(NRF24_W_TX_PAYLOAD, &data, 5);
+        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x00; buf[4] = 0x00;
+        status = nrf24_send_command(NRF24_W_REGISTER | NRF24_RX_ADDR_P0, &buf, 5);
+        //printf("Set rx addr P0:\t\t%02x\r\n", status);
 
+        buf[0] = 0x02; buf[1] = 0x01; buf[2] = 0x02; buf[3] = 0x03; buf[4] = 0x05;
+        status = nrf24_send_command(NRF24_W_TX_PAYLOAD, &buf, 5);
+        //printf("Set rx addr P0:\t\t%02x\r\n", status);
 
-        nrf24_read_register(NRF24_CONFIG, &config, 1);
-        config &= 0x00;
-        nrf24_write_register(NRF24_CONFIG, &config, 1);
+        status = nrf24_send_command(NRF24_R_REGISTER | NRF24_CONFIG, &buf, 1);
 
+        buf[0] &= ~NRF24_PRIM_RX;
+        status = nrf24_send_command(NRF24_W_REGISTER | NRF24_CONFIG, &buf, 1);
 
-        data1[0] = 0x00; data1[1] = 0x00; data1[2] = 0x00; data1[3] = 0x00; data1[4] = 0x00;
+        PA_ODR |= (1 << 1);
+        for(i = 0; i < 5000; i++) {
+            for(x = 0; x < 100; x++) {}
+        }
+        PA_ODR &= ~(1 << 1);
 
-        nrf24_send_command(0x00 | NRF24_TX_ADDR, &data1, 5);
+        status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, 0, 0);
+        printf("Status Packet:\t%02x\r\n", status);
 
-        printf("%02x %02x %02x %02x %02x\r\n", data1[0], data1[1], data1[2], data1[3], data1[4]);
-    }
+        buf[0] = NRF24_TX_DS | NRF24_MAX_RT;
+        status = nrf24_send_command(NRF24_W_REGISTER | NRF24_STATUS, &buf, 1);
 
-*/
+        status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, 0, 0);
+        printf("Status Clear:\t%02x\r\n", status);
+
+        printf("\r\n\r\n");
+    };
 }
