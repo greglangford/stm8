@@ -84,7 +84,7 @@ void main(void) {
     UART1_BRR2 = 0x03; UART1_BRR1 = 0x68; // 9600 baud
 
     // GPIO
-    PA_DDR |= (1 << 1) | (1 << 3);  // PA3 Output
+    PA_DDR |= (1 << 1) | ~(1 << 2) |(1 << 3);  // PA1 OUT, PA2 IN, PA3 OUT
     PA_CR1 |= (1 << 1) | (1 << 3);  // PA3 Push-Pull
     PA_ODR |= ~(1 << 1) | (1 << 3); // PA3 Pullup
 
@@ -92,6 +92,7 @@ void main(void) {
     SPI_CR1 = SPI_CR1_SPE | SPI_CR1_MSTR;    // SPI Enabled, SPI Master Mode
 
     nrf24_begin();
+
     while(1) {
         // clear interrupts
         buf[0] = NRF24_TX_DS | NRF24_MAX_RT;
@@ -99,11 +100,11 @@ void main(void) {
 
         printf("Status Start:\t%02x\r\n", status);
 
-        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x00; buf[4] = 0x00;
+        buf[0] = 0x01; buf[1] = 0x01; buf[2] = 0x01; buf[3] = 0x01; buf[4] = 0x01;
         status = nrf24_send_command(NRF24_W_REGISTER | NRF24_TX_ADDR, &buf, 5);
         //printf("Set tx addr:\t\t%02x\r\n", status);
 
-        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x00; buf[4] = 0x00;
+		buf[0] = 0x01; buf[1] = 0x01; buf[2] = 0x01; buf[3] = 0x01; buf[4] = 0x01;
         status = nrf24_send_command(NRF24_W_REGISTER | NRF24_RX_ADDR_P0, &buf, 5);
         //printf("Set rx addr P0:\t\t%02x\r\n", status);
 
