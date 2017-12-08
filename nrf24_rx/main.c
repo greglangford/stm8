@@ -7,6 +7,7 @@
 #define CLK_DIVR	(*(volatile uint8_t *)0x50c6)
 #define CLK_PCKENR1	(*(volatile uint8_t *)0x50c7)
 #define PA_ODR      (*(volatile uint8_t *)0x5000)
+#define PA_IDR      (*(volatile uint8_t *)0x5001)
 #define PA_DDR      (*(volatile uint8_t *)0x5002)
 #define PA_CR1      (*(volatile uint8_t *)0x5003)
 #define PA_CR2      (*(volatile uint8_t *)0x5004)
@@ -27,6 +28,7 @@ uint8_t status;
 uint8_t buf[64];
 
 volatile uint8_t interrupt = 0;
+volatile uint8_t gpio_status = 0;
 
 void putchar(char c) {
 	while(!(UART1_SR & UART_SR_TXE));
@@ -88,10 +90,8 @@ void nrf24_listen() {
 	status = nrf24_send_command(NRF24_W_REGISTER | NRF24_EN_RXADDR, &buf, 1);
 
     status = nrf24_send_command(NRF24_R_REGISTER | NRF24_EN_RXADDR, &buf, 1);
-	//printf("RX ADDR: %02x\r\n", buf[0]);
 
 	PA_ODR |= (1 << 1);
-	//PA_CR2 |= (1 << 2);
 }
 
 void main(void) {
@@ -104,7 +104,7 @@ void main(void) {
     UART1_CR3 &= ~(UART_CR3_STOP1 | UART_CR3_STOP2); // 1 stop bit
     UART1_BRR2 = 0x03; UART1_BRR1 = 0x68; // 9600 baud
 
-    PA_DDR |= (1 << 1) | ~(1 << 2) | (1 << 3);  // PA1 OUT, PA2 IN, PA3 OUT
+    PA_DDR |= (1 << 1) | (1 << 3);  // PA1 OUT, PA2 IN, PA3 OUT
     PA_CR1 |= (1 << 1) | (1 << 2) | (1 << 3);   // PA1 Push-Pull, PA2 Pull-Up , PA3 Push-Pull
     PA_CR2 |= (1 << 2);                         // PA2 Interrupt
     PA_ODR |= (1 << 3); // PA3 Pullup
@@ -120,30 +120,37 @@ void main(void) {
 
     while(1) {
 		if(interrupt) {
-			PA_ODR &= ~(1 << 1);
 			interrupt = 0;
-			status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, &buf, 1);
-			printf("Status: %02x\r\n", buf[0]);
+			// check pin low IRQ is active low
+			if((gpio_status & (1 << 2)) == 0) {
 
+				PA_ODR &= ~(1 << 1);
 
+				status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, &buf, 1);
+				printf("Status: %02x\r\n", status);
 
-			status = nrf24_send_command(NRF24_R_REGISTER | NRF24_R_RX_PAYLOAD, &buf, 5);
-			printf("Payload: %02x %02x %02x %02x %02x\r\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+				buf[0] = (1 << 6) | status;
+				status = nrf24_send_command(NRF24_W_REGISTER | NRF24_STATUS, &buf, 1);
 
-			buf[0] = (1 << 6);
-			status = nrf24_send_command(NRF24_W_REGISTER | NRF24_STATUS, &buf, 1);
+				status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, &buf, 1);
+				printf("Clear Interrupt Status: %02x\r\n", status);
 
-			status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, &buf, 1);
-			printf("Clear Interrupt Status: %02x\r\n", buf[0]);
+				status = nrf24_send_command(NRF24_R_REGISTER | NRF24_R_RX_PAYLOAD, &buf, 5);
+				printf("Payload: %02x %02x %02x %02x %02x\r\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+
+				status = nrf24_send_command(NRF24_R_REGISTER | NRF24_STATUS, &buf, 1);
+				printf("Clear Interrupt Status: %02x\r\n", status);
+			}
 		}
 
+		PA_CR2 |= (1 << 2);
 		nrf24_listen();
-
     }
 }
 
 // Port A external interrupts
 void PA_external_isr() __interrupt(0x03) {
 	PA_CR2 &= ~(1 << 2);
+	gpio_status = PA_IDR;
 	interrupt = 1;
 }
